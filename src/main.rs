@@ -237,6 +237,53 @@ fn test_simple_fs() {
             )
         )
     );
+ 
+    root.borrow_mut().files.push(
+        Rc::new(
+            RefCell::new(
+                MyFile{
+                    name: "bfile.exe".to_string(),
+                    size: 2000000,
+                    parent: Rc::clone(&root)
+                }
+            )
+        )
+    );
+
+    let subdir = Rc::new(
+        RefCell::new(
+            MyDir {
+                name: "adir".to_string(),
+                subdirectories: vec![],
+                files: vec![],
+                parent: Some(root.clone())
+            }
+        )
+    );
+
+ 
+    subdir.borrow_mut().files.push(
+        Rc::new(
+            RefCell::new(
+                MyFile{
+                    name: "cfile.exe".to_string(),
+                    size: 1000000,
+                    parent: Rc::clone(&subdir)
+                }
+            )
+        )
+    );
+
+    root.borrow_mut().subdirectories.push(subdir.clone());
+
 
     root.borrow().show(0);
+    assert_eq!(root.borrow().get_size(), 4000000);
+    assert_eq!(subdir.borrow().get_size(), 1000000);
+
+    let sizes = vec![
+        ("adir".to_string(), 1000000 as usize),
+        ("/".to_string(), 4000000 as usize)
+    ];
+    assert_eq!(root.borrow().get_sizes(), sizes);
 }
