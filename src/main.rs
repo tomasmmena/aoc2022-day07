@@ -4,6 +4,7 @@ use std::io::{self, BufRead};
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::usize;
 
 
 trait Node {
@@ -13,16 +14,10 @@ trait Node {
 
 struct MyDir {
     name: String,
-    children: Vec<Rc<RefCell<ChildType>>>,
+    subdirectories: Vec<Rc<RefCell<MyDir>>>,
+    files: Vec<Rc<RefCell<MyFile>>>,
     parent: Option<Rc<RefCell<MyDir>>>
 }
-
-enum ChildType
-{
-    Dir(MyDir),
-    File(MyFile)
-}
-
 
 impl MyDir {
 
@@ -36,16 +31,11 @@ impl MyDir {
             },
             "." => None,
             _ => {
-                for node in self.children.iter() {
+                for node in self.subdirectories.iter() {
 
                     let borrowed = node.borrow();
-                    match &*borrowed {
-                        ChildType::Dir(a) => {
-                            if a.name == name {
-                                return Some(Rc::new(RefCell::new(*a)))
-                            }
-                        },
-                        _ => {}
+                    if borrowed.name == name {
+                        return Some(node.clone())
                     }
                 }
                 None
@@ -53,10 +43,33 @@ impl MyDir {
         }
     }
 
-    fn append(&mut self, new_node: Rc<RefCell<ChildType>>) {
-        self.children.push(new_node);
+    fn append_subdir(&mut self, new_node: Rc<RefCell<MyDir>>) {
+        self.subdirectories.push(new_node);
     }
 
+    fn append_file(&mut self, new_node: Rc<RefCell<MyFile>>) {
+        self.files.push(new_node);
+    }
+
+
+    fn get_size(&self) -> usize {
+        self.files.iter().map(|f| f.borrow().size).sum::<usize>() +
+        self.subdirectories.iter().map(|sd| sd.borrow().get_size()).sum::<usize>()
+    }
+
+    fn get_sizes(&self) -> Vec<(String, usize)> {
+        let mut starter_list: Vec<(String, usize)> = vec![];
+        for sd in self.subdirectories.iter() {
+            let iterator: Vec<(String, usize)> = {
+                sd.borrow().get_sizes()
+            };
+            starter_list.extend(iterator.into_iter().to_owned());
+        }
+        let own_size = starter_list.iter().map(|(_, size)| size).sum::<usize>() + self.files.iter().map(|f| f.borrow().size).sum::<usize>();
+        starter_list.push((String::from(&self.name), own_size));
+
+        starter_list
+    }
 }
 
 
@@ -70,10 +83,14 @@ impl Node for MyDir {
             print!("-");
         }
         println!("dir {}", self.name);
-        //for node in self.children.iter() {
-        //    node.borrow().show(level + 1);
-        //}
+        for node in self.subdirectories.iter() {
+            node.borrow().show(level + 1);
+        }
+        for node in self.files.iter() {
+            node.borrow().show(level + 1);
+        }
     }
+
 }
 
 struct MyFile {
@@ -109,7 +126,8 @@ fn main() {
         RefCell::new(
             MyDir {
                 name: "/".to_string(),
-                children: vec![],
+                subdirectories: vec![],
+                files: vec![],
                 parent: None
             }
         )
@@ -122,35 +140,76 @@ fn main() {
         );
         match starter {
             "$" => {  // command, either cd or ls
-                let (cmd, params) = other.split_at(
-                    other.find(" ").unwrap_or(other.len())
+                let (cmd, params) = other[1..other.len()].split_at(
+                    other[1..other.len()].find(" ").unwrap_or(0)
                 );
                 match cmd {
                     "cd" => {
-                        current_node = current_node.borrow().find(params).expect("Invalid cd!");
+                        let next_node = {
+                            current_node.borrow().find(&params[1..params.len()]).expect("invalid cd!")
+                        };
+                        current_node = next_node.clone();
                     },
                     _ => {}
                 }
             },
             "dir" => {  // a directory that's in the current node
-                current_node.borrow_mut().append(
+                current_node.borrow_mut().append_subdir(
                     Rc::new(RefCell::new(
-                        ChildType::Dir(MyDir {
-                            name: String::from(other),
-                            children: vec![],
+                        MyDir {
+                            name: other[1..other.len()].to_string(),
+                            subdirectories: vec![],
+                            files: vec![],
                             parent: Some(current_node.clone())
-                        })
+                        }
                     ))
                 )
             },
             _ => { // a number or a bad starter
-
+                let size: usize = starter.parse().expect("Invalid start");
+                current_node.borrow_mut().append_file(
+                    Rc::new(RefCell::new(
+                        MyFile { 
+                            name: other[1..other.len()].to_string(), 
+                            size: size, 
+                            parent: current_node.clone() 
+                        }
+                    ))
+                )
             }
         }
     }
+    
+    
+    loop {
+        let parent = {
+            match &current_node.borrow().parent {
+                Some(parent_node) => Some(parent_node.clone()),
+                None => None
+            }
+        };
+        if let Some(parent_node) = parent {
+            current_node = parent_node.clone();
+        } else {
+            break;
+        }
 
+    }
 
-    println!("Hello, world!");
+    current_node.borrow().show(0);
+    {
+        let cn = current_node.borrow();
+        println!("Size at {}: {}", cn.name, cn.get_size());
+        
+        let total_size: usize = cn
+            .get_sizes()
+            .into_iter()
+            .map(|(_, size)| size)
+            .filter(|size| size <= &100000)
+            .sum();
+        println!("Total size of dirs of at most 100000: {}", total_size);
+    }
+
 }
 
 
@@ -160,20 +219,21 @@ fn test_simple_fs() {
         RefCell::new(
             MyDir {
                 name: "/".to_string(),
-                children: vec![],
+                subdirectories: vec![],
+                files: vec![],
                 parent: None
             }
         )
     );
 
-    root.borrow_mut().children.push(
+    root.borrow_mut().files.push(
         Rc::new(
             RefCell::new(
-                ChildType::File(MyFile{
+                MyFile{
                     name: "afile.exe".to_string(),
                     size: 1000000,
                     parent: Rc::clone(&root)
-                })
+                }
             )
         )
     );
