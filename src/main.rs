@@ -210,6 +210,18 @@ fn main() {
             .filter(|size| size <= &100000)
             .sum();
         println!("Total size of dirs of at most 100000: {}", total_size);
+
+        let threshold = 30_000_000 - (70_000_000 - cn.get_size());
+        println!("Threshold = {}", threshold);
+        let mut sizes: Vec<(String, usize)> = cn
+            .get_sizes()
+            .into_iter()
+            .filter(|(_, size)| size > &threshold)
+            .collect();
+        sizes.sort_by_key(|(_, size)| size.clone());
+        let smallest = sizes.first().expect("No acceptable candidates!");
+        println!("Smallest directory over threshold is sized: {}", smallest.1);
+        
     }
 
 }
