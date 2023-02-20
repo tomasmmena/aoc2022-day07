@@ -59,13 +59,17 @@ impl MyDir {
 
     fn get_sizes(&self) -> Vec<(String, usize)> {
         let mut starter_list: Vec<(String, usize)> = vec![];
+        let mut own_size: usize = self.files.iter().map(|f| f.borrow().size).sum::<usize>();
         for sd in self.subdirectories.iter() {
             let iterator: Vec<(String, usize)> = {
                 sd.borrow().get_sizes()
             };
+            // there should always be at least one node for the subdir itself
+            // it should be the only one considered for the size calculation
+            // as it is the only direct child
+            own_size += iterator.last().unwrap().1;
             starter_list.extend(iterator.into_iter().to_owned());
         }
-        let own_size = starter_list.iter().map(|(_, size)| size).sum::<usize>() + self.files.iter().map(|f| f.borrow().size).sum::<usize>();
         starter_list.push((String::from(&self.name), own_size));
 
         starter_list
@@ -80,9 +84,9 @@ impl Node for MyDir {
 
     fn show(&self, level: usize) {
         for _ in 0..level {
-            print!("-");
+            print!("  ");
         }
-        println!("dir {}", self.name);
+        println!("- {} (dir)", self.name);
         for node in self.subdirectories.iter() {
             node.borrow().show(level + 1);
         }
@@ -106,9 +110,9 @@ impl Node for MyFile {
 
     fn show(&self, level: usize) {
         for _ in 0..level {
-            print!("-");
+            print!("  ");
         }
-        println!("{} {}", self.size, self.name);
+        println!("- {} (file, size={})", self.name, self.size);
     }
 }
 
@@ -181,7 +185,7 @@ fn main() {
     }
     
     
-    loop {
+    loop {  // go up to the root
         let parent = {
             match &current_node.borrow().parent {
                 Some(parent_node) => Some(parent_node.clone()),
@@ -196,11 +200,9 @@ fn main() {
 
     }
 
-    current_node.borrow().show(0);
+    // current_node.borrow().show(0);
     {
         let cn = current_node.borrow();
-        println!("Size at {}: {}", cn.name, cn.get_size());
-        
         let total_size: usize = cn
             .get_sizes()
             .into_iter()
